@@ -3,15 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
   <title>MAESTRIX | HRIS Dashboard</title>
   <meta name="description" content="MAESTRIX HRIS Enterprise Dashboard" />
   <meta name="theme-color" content="#08111f" />
-
   <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-
   <style>
     *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,sans-serif}
     body{
@@ -53,8 +50,36 @@
       font-weight:700;
       border:none;
       cursor:pointer;
+      font-size:15px;
     }
+    .btn:hover{background:#0e8fe0;}
+    .btn-outline{
+      display:inline-block;
+      padding:10px 18px;
+      background:transparent;
+      color:#8bc8ff;
+      text-decoration:none;
+      border-radius:12px;
+      font-weight:600;
+      border:1px solid #8bc8ff55;
+      cursor:pointer;
+      font-size:13px;
+      margin-left:10px;
+    }
+    .btn-outline:hover{background:#8bc8ff22;}
     .small{font-size:12px;color:rgba(255,255,255,.55);margin-top:16px}
+    #statusText{font-size:12px;color:#8bc8ff;margin-bottom:8px;min-height:18px;}
+    #errorBox{
+      display:none;
+      background:rgba(255,77,79,.12);
+      border:1px solid rgba(255,77,79,.4);
+      border-radius:10px;
+      padding:12px 16px;
+      font-size:12px;
+      color:#ffaaaa;
+      margin-bottom:16px;
+      line-height:1.6;
+    }
     .footer{
       position:fixed;
       bottom:18px;
@@ -65,51 +90,96 @@
     }
   </style>
 </head>
-
 <body>
   <main class="box">
     <div class="logo">MX</div>
     <div class="brand">Digital Innovation Platform</div>
     <h1>MAESTRIX</h1>
-
     <p>
-      Business Automation • AI Solutions • Enterprise Dashboard<br>
+      Business Automation &bull; AI Solutions &bull; Enterprise Dashboard<br>
       Mengalihkan ke HRIS Dashboard...
     </p>
 
-    <a id="openBtn" class="btn" href="#" rel="noopener noreferrer">
-      Open Dashboard
-    </a>
+    <div id="statusText">Mendeteksi URL terbaik...</div>
+    <div id="errorBox"></div>
+
+    <div>
+      <a id="openBtn" class="btn" href="#" target="_self" rel="noopener noreferrer">
+        &#128640; Open Dashboard
+      </a>
+      <a id="openBtnNew" class="btn-outline" href="#" target="_blank" rel="noopener noreferrer">
+        Tab Baru
+      </a>
+    </div>
 
     <div class="small">
-      Jika tidak otomatis terbuka, klik tombol di atas.
+      Jika tidak otomatis terbuka, klik tombol di atas.<br>
+      Pastikan login dengan akun <strong>by.ra.official228@gmail.com</strong> di browser.
     </div>
   </main>
 
   <div class="footer">
-    © 2026 MAESTRIX • Business Automation & AI Solutions
+    &copy; 2026 MAESTRIX &bull; Business Automation &amp; AI Solutions
   </div>
 
   <script>
-    const WEB_APP_URL =
-      "https://script.google.com/macros/s/AKfycbwRPQRk1VdzVNGN7jwukvg3KLW8P_yEWS24DROzaCR42opF_xakEUDDwmNkzKpA9CLE/exec";
+    // ─── KONFIGURASI ────────────────────────────────────────────────────────────
+    // GANTI nilai ini setiap kali deploy ulang Apps Script dengan Deployment ID baru.
+    // Format wajib: https://script.google.com/macros/s/DEPLOYMENT_ID/exec
+    // JANGAN pakai URL yang mengandung /macros/u/ atau dari editor (test deployment).
+    var DEPLOYMENT_ID = "AKfycbwRPQRk1VdzVNGN7jwukvg3KLW8P_yEWS24DROzaCR42opF_xakEUDDwmNkzKpA9CLE";
 
-    function isValidAppsScriptUrl(url) {
-      return /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(\?.*)?$/.test(url);
+    // ─── BUILD URL ──────────────────────────────────────────────────────────────
+    // authuser=0 → paksa pakai akun pertama (hindari /macros/u/N/ redirect)
+    // v=timestamp → anti-cache
+    var BASE_URL = "https://script.google.com/macros/s/" + DEPLOYMENT_ID + "/exec";
+    var FINAL_URL = BASE_URL + "?authuser=0&v=" + Date.now();
+
+    // ─── VALIDASI ───────────────────────────────────────────────────────────────
+    function isValidDeploymentUrl(url) {
+      // Tolak URL yang mengandung /macros/u/ (multi-login redirect)
+      if (/\/macros\/u\//.test(url)) return false;
+      // Tolak URL Google Drive / Docs
+      if (/drive\.google\.com|docs\.google\.com/.test(url)) return false;
+      // Tolak test deployment (berakhiran /dev)
+      if (/\/dev$/.test(url)) return false;
+      // Wajib format public Web App
+      return /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec/.test(url);
     }
 
-    const openBtn = document.getElementById("openBtn");
+    var statusEl  = document.getElementById("statusText");
+    var errorBox  = document.getElementById("errorBox");
+    var openBtn   = document.getElementById("openBtn");
+    var openBtnNew = document.getElementById("openBtnNew");
 
-    if (!isValidAppsScriptUrl(WEB_APP_URL)) {
-      document.querySelector("p").innerHTML =
-        "URL Apps Script tidak valid.<br>Pastikan memakai format https://script.google.com/macros/s/DEPLOYMENT_ID/exec";
+    if (!isValidDeploymentUrl(BASE_URL)) {
+      // URL tidak valid — tampilkan error, jangan redirect
+      statusEl.textContent = "❌ URL Apps Script tidak valid.";
+      errorBox.style.display = "block";
+      errorBox.innerHTML =
+        "URL yang dikonfigurasi bukan format Web App public.<br>" +
+        "Format wajib: <code>https://script.google.com/macros/s/DEPLOYMENT_ID/exec</code><br><br>" +
+        "URL saat ini ditolak: <code>" + BASE_URL + "</code><br><br>" +
+        "Silakan deploy ulang Apps Script dan update DEPLOYMENT_ID di index.html.";
       openBtn.style.display = "none";
+      openBtnNew.style.display = "none";
     } else {
-      openBtn.href = WEB_APP_URL;
+      // URL valid — set tombol dan redirect
+      openBtn.href    = FINAL_URL;
+      openBtnNew.href = FINAL_URL;
 
-      setTimeout(function () {
-        window.location.replace(WEB_APP_URL + "?v=" + Date.now());
-      }, 900);
+      statusEl.textContent = "✅ URL valid, mengalihkan dalam 1 detik...";
+
+      // Redirect otomatis setelah 1 detik (lebih lambat dari 0.9s agar status terbaca)
+      var timer = setTimeout(function () {
+        statusEl.textContent = "🚀 Mengalihkan...";
+        window.location.replace(FINAL_URL);
+      }, 1000);
+
+      // Jika user klik tombol sebelum timeout, batalkan timeout
+      openBtn.addEventListener("click", function () {
+        clearTimeout(timer);
+      });
     }
   </script>
 </body>
