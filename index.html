@@ -3,22 +3,24 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
   <title>MAESTRIX | HRIS Dashboard</title>
   <meta name="description" content="MAESTRIX HRIS Enterprise Dashboard" />
   <meta name="theme-color" content="#08111f" />
-
+  <!--
+    Permissions-Policy via meta tag (best-effort untuk browser yang support).
+    Header yang sesungguhnya di-set via vercel.json (lihat file vercel.json).
+  -->
+  <meta http-equiv="Permissions-Policy"
+    content="camera=*, microphone=*, geolocation=*, clipboard-read=*, clipboard-write=*, fullscreen=*" />
   <!-- Upload favicon.png ke root repository GitHub -->
   <link rel="icon" type="image/png" href="/favicon.png" />
   <link rel="apple-touch-icon" href="/favicon.png" />
-
   <style>
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
     }
-
     html,
     body {
       width: 100%;
@@ -28,6 +30,7 @@
       font-family: Arial, Helvetica, sans-serif;
     }
 
+    /* ── Loading screen ── */
     .loading {
       position: fixed;
       inset: 0;
@@ -38,11 +41,15 @@
       gap: 14px;
       background: radial-gradient(circle at top right, #163d74, #08111f 45%, #02060d);
       color: #d8ecff;
-      z-index: 1;
+      z-index: 10;
       text-align: center;
       padding: 24px;
+      transition: opacity .4s ease;
     }
-
+    .loading.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
     .logo {
       width: 64px;
       height: 64px;
@@ -55,49 +62,157 @@
       font-size: 24px;
       box-shadow: 0 0 35px rgba(30, 167, 255, .35);
     }
-
     .loading strong {
       color: #ffffff;
       font-size: 18px;
       letter-spacing: .02em;
     }
-
-    .loading span {
+    .loading .sub {
       color: #8bc8ff;
       font-size: 13px;
     }
 
-    iframe {
-      position: relative;
-      z-index: 2;
+    /* ── Camera / permission banner (outside iframe) ── */
+    #permBanner {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 20;
+      background: linear-gradient(90deg, #0f766e, #1d4ed8);
+      color: #fff;
+      font-size: 13px;
+      padding: 10px 16px;
+      text-align: center;
+      box-shadow: 0 4px 18px rgba(0,0,0,.35);
+    }
+    #permBanner b { font-weight: 800; }
+    #permBanner .close-btn {
+      float: right;
+      background: rgba(255,255,255,.18);
+      border: 0;
+      border-radius: 8px;
+      color: #fff;
+      cursor: pointer;
+      font-size: 13px;
+      padding: 2px 8px;
+      margin-left: 12px;
+    }
+
+    /* ── Main iframe ── */
+    iframe#dashFrame {
+      position: fixed;
+      top: 0;
+      left: 0;
       width: 100%;
-      height: 100vh;
+      height: 100%;
       border: none;
       display: block;
       background: #08111f;
+      z-index: 5;
     }
   </style>
 </head>
-
 <body>
+
+  <!-- Loading overlay -->
   <div class="loading" id="loading">
     <div class="logo">MX</div>
-    <strong>Loading MAESTRIX HRIS Dashboard...</strong>
-    <span>Business Automation & AI Solutions</span>
+    <strong>Loading MAESTRIX HRIS Dashboard…</strong>
+    <span class="sub">Business Automation &amp; AI Solutions</span>
   </div>
 
   <!--
-    PENTING:
-    Ini iframe, bukan redirect.
-    Jangan tambahkan window.location.href / window.location.replace.
+    Permission hint banner — muncul saat kamera/GPS pertama kali diperlukan.
+    Dikontrol lewat postMessage dari Apps Script iframe.
+  -->
+  <div id="permBanner">
+    <b>🎥 Izin Kamera &amp; Lokasi diperlukan.</b>
+    Klik ikon <b>gembok/kamera</b> di address bar → pilih <b>Allow</b> untuk Kamera &amp; Lokasi → lalu <b>Refresh</b>.
+    <button class="close-btn" onclick="hideBanner()">✕ Tutup</button>
+  </div>
+
+  <!--
+    PENTING: Ini IFRAME, bukan redirect.
+    Jangan tambahkan window.location.href / window.location.replace di sini.
     Dengan cara ini address bar tetap maestrix.vercel.app.
+
+    FIX KAMERA + GPS:
+    - allow="camera *; microphone *; geolocation *; ..."  → wajib ada "geolocation *"
+    - Wildcard (*) memastikan permission di-forward ke cross-origin iframe
+    - referrerpolicy="no-referrer-when-downgrade" agar referer dikirim ke Apps Script
   -->
   <iframe
+    id="dashFrame"
     src="https://script.google.com/macros/s/AKfycbwRPQRk1VdzVNGN7jwukvg3KLW8P_yEWS24DROzaCR42opF_xakEUDDwmNkzKpA9CLE/exec"
     title="MAESTRIX HRIS Dashboard"
-    allow="camera; microphone; clipboard-read; clipboard-write; fullscreen"
+    allow="camera *; microphone *; geolocation *; clipboard-read *; clipboard-write *; fullscreen *"
     referrerpolicy="no-referrer-when-downgrade"
-    onload="document.getElementById('loading').style.display='none';">
+    onload="onFrameLoaded()">
   </iframe>
+
+  <script>
+    /* ────────────────────────────────────────────────────
+     * NON-DESTRUCTIVE VERCEL HOST SCRIPT
+     * Hanya mengatur loading screen, permission banner,
+     * dan meneruskan postMessage dari iframe.
+     * Tidak ada redirect, tidak ada logic login/absensi.
+     * ──────────────────────────────────────────────────── */
+
+    var LOAD_TIMEOUT = 18000; // ms — fallback hide loading jika onload terlambat
+    var loadTimer;
+
+    function onFrameLoaded() {
+      var loading = document.getElementById('loading');
+      if (!loading) return;
+      loading.classList.add('fade-out');
+      setTimeout(function () { loading.style.display = 'none'; }, 420);
+      if (loadTimer) clearTimeout(loadTimer);
+    }
+
+    // Fallback: sembunyikan loading meski onload telat (misal koneksi lambat)
+    loadTimer = setTimeout(function () {
+      var loading = document.getElementById('loading');
+      if (loading) { loading.classList.add('fade-out'); setTimeout(function(){ loading.style.display='none'; }, 420); }
+    }, LOAD_TIMEOUT);
+
+    /* ── Permission banner helpers ── */
+    function showBanner() {
+      var b = document.getElementById('permBanner');
+      if (b) b.style.display = 'block';
+    }
+    function hideBanner() {
+      var b = document.getElementById('permBanner');
+      if (b) b.style.display = 'none';
+    }
+
+    /*
+      Listen postMessage dari Apps Script iframe.
+      Apps Script dapat kirim: { type: 'maestrix_cam_denied' }
+      untuk memicu banner instruksi di host Vercel.
+
+      Ini opsional — banner muncul otomatis jika Apps Script
+      mengirim event, atau bisa dipanggil manual.
+    */
+    window.addEventListener('message', function (evt) {
+      // Keamanan: hanya terima dari Apps Script domain
+      if (!evt.origin || evt.origin.indexOf('script.google.com') < 0) return;
+      var msg = evt.data;
+      if (!msg || typeof msg !== 'object') return;
+      if (msg.type === 'maestrix_cam_denied' || msg.type === 'maestrix_perm_denied') {
+        showBanner();
+      }
+      if (msg.type === 'maestrix_cam_ok' || msg.type === 'maestrix_perm_ok') {
+        hideBanner();
+      }
+    });
+
+    /*
+      Tidak ada window.location.replace.
+      Tidak ada window.location.href redirect.
+      Tidak ada script lain yang merusak data/login/session lama.
+    */
+  </script>
 </body>
 </html>
